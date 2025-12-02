@@ -310,6 +310,30 @@ router.patch(
           res.status(404).json({ message: "Order not found" });
           return;
         }
+        // Auto-create transaction when order is delivered
+        if (status === "DELIVERED") {
+          db.get("SELECT retailer_id, total_amount FROM orders WHERE id = ?", [id], (err3, orderRow: any) => {
+            if (!err3 && orderRow && orderRow.total_amount > 0) {
+              // Check if transaction already exists for this order
+              db.get(
+                "SELECT id FROM transactions WHERE order_id = ? AND type = 'SALE'",
+                [id],
+                (err4, existingTx: any) => {
+                  if (!err4 && !existingTx) {
+                    // Create transaction
+                    db.run(
+                      "INSERT INTO transactions (order_id, retailer_id, amount, type) VALUES (?, ?, ?, 'SALE')",
+                      [id, orderRow.retailer_id, orderRow.total_amount],
+                      () => {
+                        // Transaction created (or failed silently)
+                      }
+                    );
+                  }
+                }
+              );
+            }
+          });
+        }
         db.get("SELECT * FROM orders WHERE id = ?", [id], (err2, row) => {
           if (err2 || !row) {
             res.json({ id, status });

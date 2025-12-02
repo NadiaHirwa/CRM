@@ -33,13 +33,15 @@ function App() {
     pendingOrders: [],
     complaints: [],
   });
-  const [adminTab, setAdminTab] = useState<'reports' | 'products' | 'retailers' | 'customers'>('reports');
+  const [adminTab, setAdminTab] = useState<'reports' | 'products' | 'retailers' | 'customers' | 'transactions'>('reports');
   const [adminProducts, setAdminProducts] = useState<any[]>([]);
   const [adminRetailers, setAdminRetailers] = useState<any[]>([]);
   const [adminCustomers, setAdminCustomers] = useState<any[]>([]);
+  const [adminTransactions, setAdminTransactions] = useState<any[]>([]);
   const [newProduct, setNewProduct] = useState({ name: '', sku: '', unit_price: 0, stock_quantity: 0 });
   const [newRetailer, setNewRetailer] = useState({ name: '', contact_name: '', phone: '', email: '', address: '' });
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
+  const [newTransaction, setNewTransaction] = useState({ order_id: '', retailer_id: '', customer_id: '', amount: 0, type: 'SALE' as 'SALE' | 'REFUND' });
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [editingRetailerId, setEditingRetailerId] = useState<number | null>(null);
   const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
@@ -180,14 +182,16 @@ function App() {
   const loadAdminLists = async () => {
     if (!token) return;
     try {
-      const [prodRes, retRes, custRes] = await Promise.all([
+      const [prodRes, retRes, custRes, txRes] = await Promise.all([
         fetch(`${API_BASE}/api/products`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE}/api/retailers`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE}/api/customers`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/api/transactions`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       if (prodRes.ok) setAdminProducts(await prodRes.json());
       if (retRes.ok) setAdminRetailers(await retRes.json());
       if (custRes.ok) setAdminCustomers(await custRes.json());
+      if (txRes.ok) setAdminTransactions(await txRes.json());
     } catch {
       // ignore for now, errors surfaced via other calls
     }
@@ -289,6 +293,27 @@ function App() {
     }
   };
 
+  const createTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !newTransaction.amount || newTransaction.amount <= 0) return;
+    const res = await fetch(`${API_BASE}/api/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        order_id: newTransaction.order_id ? Number(newTransaction.order_id) : undefined,
+        retailer_id: newTransaction.retailer_id ? Number(newTransaction.retailer_id) : undefined,
+        customer_id: newTransaction.customer_id ? Number(newTransaction.customer_id) : undefined,
+        amount: newTransaction.amount,
+        type: newTransaction.type,
+      }),
+    });
+    if (res.ok) {
+      setNewTransaction({ order_id: '', retailer_id: '', customer_id: '', amount: 0, type: 'SALE' });
+      await loadAdminLists();
+      await loadReports(); // Refresh sales report
+    }
+  };
+
   if (!token) {
     return (
       <div className="App">
@@ -359,6 +384,7 @@ function App() {
             {adminTab === 'products' && 'Products'}
             {adminTab === 'retailers' && 'Retailers'}
             {adminTab === 'customers' && 'Customers'}
+            {adminTab === 'transactions' && 'Transactions'}
           </h2>
           <div className="tabs">
             <button
@@ -394,6 +420,15 @@ function App() {
             >
               Customers
             </button>
+            <button
+              className={adminTab === 'transactions' ? 'tab active' : 'tab'}
+              onClick={() => {
+                setAdminTab('transactions');
+                loadAdminLists();
+              }}
+            >
+              Transactions
+            </button>
           </div>
           {adminTab === 'reports' && (
             <button
@@ -414,7 +449,12 @@ function App() {
           <div className="card">
             <h3>Sales (by day)</h3>
             {reportState.sales.length === 0 ? (
-              <p className="muted">No sales data yet.</p>
+              <div>
+                <p className="muted">No sales data yet.</p>
+                <p className="hint" style={{ fontSize: '0.85em', marginTop: '8px' }}>
+                  Transactions are created automatically when orders are marked as DELIVERED, or you can create them manually in the Transactions tab.
+                </p>
+              </div>
             ) : (
               <table>
                 <thead>
@@ -921,6 +961,112 @@ function App() {
                             Delete
                           </button>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        )}
+
+        {adminTab === 'transactions' && (
+          <section className="cards-grid">
+            <div className="card">
+              <h3>Record Transaction</h3>
+              <form className="form" onSubmit={createTransaction}>
+                <label>
+                  Type
+                  <select
+                    value={newTransaction.type}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, type: e.target.value as 'SALE' | 'REFUND' })
+                    }
+                    required
+                  >
+                    <option value="SALE">SALE</option>
+                    <option value="REFUND">REFUND</option>
+                  </select>
+                </label>
+                <label>
+                  Amount
+                  <input
+                    type="number"
+                    min={0.01}
+                    step={0.01}
+                    value={newTransaction.amount}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, amount: Number(e.target.value) })
+                    }
+                    required
+                  />
+                </label>
+                <label>
+                  Order ID (optional)
+                  <input
+                    type="number"
+                    value={newTransaction.order_id}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, order_id: e.target.value })
+                    }
+                    placeholder="Leave empty if not linked to order"
+                  />
+                </label>
+                <label>
+                  Retailer ID (optional)
+                  <input
+                    type="number"
+                    value={newTransaction.retailer_id}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, retailer_id: e.target.value })
+                    }
+                    placeholder="Leave empty if not linked to retailer"
+                  />
+                </label>
+                <label>
+                  Customer ID (optional)
+                  <input
+                    type="number"
+                    value={newTransaction.customer_id}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, customer_id: e.target.value })
+                    }
+                    placeholder="Leave empty if not linked to customer"
+                  />
+                </label>
+                <button type="submit" className="primary-btn">
+                  Save Transaction
+                </button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h3>All Transactions</h3>
+              {adminTransactions.length === 0 ? (
+                <p className="muted">No transactions yet.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Order</th>
+                      <th>Retailer</th>
+                      <th>Customer</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminTransactions.map((t: any) => (
+                      <tr key={t.id}>
+                        <td>{t.id}</td>
+                        <td>{t.type}</td>
+                        <td>{t.amount}</td>
+                        <td>{t.order_id_display || '-'}</td>
+                        <td>{t.retailer_name || '-'}</td>
+                        <td>{t.customer_name || '-'}</td>
+                        <td>{t.created_at}</td>
                       </tr>
                     ))}
                   </tbody>
