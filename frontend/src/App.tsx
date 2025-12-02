@@ -40,6 +40,9 @@ function App() {
   const [newProduct, setNewProduct] = useState({ name: '', sku: '', unit_price: 0, stock_quantity: 0 });
   const [newRetailer, setNewRetailer] = useState({ name: '', contact_name: '', phone: '', email: '', address: '' });
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [editingRetailerId, setEditingRetailerId] = useState<number | null>(null);
+  const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
 
   const updateOrderStatus = async (orderId: number, status: string) => {
     if (!token) return;
@@ -190,16 +193,23 @@ function App() {
     }
   };
 
-  const createProduct = async (e: React.FormEvent) => {
+  const createOrUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !newProduct.name || !newProduct.unit_price) return;
-    const res = await fetch(`${API_BASE}/api/products`, {
-      method: 'POST',
+    const url =
+      editingProductId != null
+        ? `${API_BASE}/api/products/${editingProductId}`
+        : `${API_BASE}/api/products`;
+    const method = editingProductId != null ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(newProduct),
     });
     if (res.ok) {
       setNewProduct({ name: '', sku: '', unit_price: 0, stock_quantity: 0 });
+      setEditingProductId(null);
       loadAdminLists();
     }
   };
@@ -218,13 +228,20 @@ function App() {
   const createRetailer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !newRetailer.name) return;
-    const res = await fetch(`${API_BASE}/api/retailers`, {
-      method: 'POST',
+    const url =
+      editingRetailerId != null
+        ? `${API_BASE}/api/retailers/${editingRetailerId}`
+        : `${API_BASE}/api/retailers`;
+    const method = editingRetailerId != null ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(newRetailer),
     });
     if (res.ok) {
       setNewRetailer({ name: '', contact_name: '', phone: '', email: '', address: '' });
+      setEditingRetailerId(null);
       loadAdminLists();
     }
   };
@@ -243,13 +260,20 @@ function App() {
   const createCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !newCustomer.name) return;
-    const res = await fetch(`${API_BASE}/api/customers`, {
-      method: 'POST',
+    const url =
+      editingCustomerId != null
+        ? `${API_BASE}/api/customers/${editingCustomerId}`
+        : `${API_BASE}/api/customers`;
+    const method = editingCustomerId != null ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(newCustomer),
     });
     if (res.ok) {
       setNewCustomer({ name: '', phone: '', email: '', address: '' });
+      setEditingCustomerId(null);
       loadAdminLists();
     }
   };
@@ -561,8 +585,8 @@ function App() {
         {adminTab === 'products' && (
           <section className="cards-grid">
             <div className="card">
-              <h3>Add Product</h3>
-              <form className="form" onSubmit={createProduct}>
+              <h3>{editingProductId ? 'Edit Product' : 'Add Product'}</h3>
+              <form className="form" onSubmit={createOrUpdateProduct}>
                 <label>
                   Name
                   <input
@@ -630,6 +654,7 @@ function App() {
                       <th>Price</th>
                       <th>Stock</th>
                       <th></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -641,6 +666,24 @@ function App() {
                         <td>{p.stock_quantity}</td>
                         <td>
                           <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => {
+                              setEditingProductId(p.id);
+                              setNewProduct({
+                                name: p.name || '',
+                                sku: p.sku || '',
+                                unit_price: p.unit_price || 0,
+                                stock_quantity: p.stock_quantity || 0,
+                              });
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
                             className="secondary-btn"
                             onClick={() => deleteProduct(p.id)}
                           >
@@ -659,7 +702,7 @@ function App() {
         {adminTab === 'retailers' && (
           <section className="cards-grid">
             <div className="card">
-              <h3>Add Retailer</h3>
+              <h3>{editingRetailerId ? 'Edit Retailer' : 'Add Retailer'}</h3>
               <form className="form" onSubmit={createRetailer}>
                 <label>
                   Name
@@ -732,6 +775,7 @@ function App() {
                       <th>Phone</th>
                       <th>Email</th>
                       <th></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -743,6 +787,25 @@ function App() {
                         <td>{r.email}</td>
                         <td>
                           <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => {
+                              setEditingRetailerId(r.id);
+                              setNewRetailer({
+                                name: r.name || '',
+                                contact_name: r.contact_name || '',
+                                phone: r.phone || '',
+                                email: r.email || '',
+                                address: r.address || '',
+                              });
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
                             className="secondary-btn"
                             onClick={() => deleteRetailer(r.id)}
                           >
@@ -761,7 +824,7 @@ function App() {
         {adminTab === 'customers' && (
           <section className="cards-grid">
             <div className="card">
-              <h3>Add Customer</h3>
+              <h3>{editingCustomerId ? 'Edit Customer' : 'Add Customer'}</h3>
               <form className="form" onSubmit={createCustomer}>
                 <label>
                   Name
@@ -822,6 +885,7 @@ function App() {
                       <th>Email</th>
                       <th>Address</th>
                       <th></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -833,6 +897,24 @@ function App() {
                         <td>{c.address}</td>
                         <td>
                           <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => {
+                              setEditingCustomerId(c.id);
+                              setNewCustomer({
+                                name: c.name || '',
+                                phone: c.phone || '',
+                                email: c.email || '',
+                                address: c.address || '',
+                              });
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
                             className="secondary-btn"
                             onClick={() => deleteCustomer(c.id)}
                           >
