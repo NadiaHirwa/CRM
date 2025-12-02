@@ -5,6 +5,11 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 import { initDb } from "./db";
 import authRoutes from "./routes/authRoutes";
+import customersRoutes from "./routes/customersRoutes";
+import retailersRoutes from "./routes/retailersRoutes";
+import productsRoutes from "./routes/productsRoutes";
+import ordersRoutes from "./routes/ordersRoutes";
+import complaintsRoutes from "./routes/complaintsRoutes";
 
 dotenv.config();
 
@@ -23,6 +28,11 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/customers", customersRoutes);
+app.use("/api/retailers", retailersRoutes);
+app.use("/api/products", productsRoutes);
+app.use("/api/orders", ordersRoutes);
+app.use("/api/complaints", complaintsRoutes);
 
 app.listen(PORT, () => {
   console.log(`CRM backend running on http://localhost:${PORT}`);
