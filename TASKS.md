@@ -35,10 +35,11 @@
   - `PROJECT_STRUCTURE.md` for folder and file layout
   - `.gitignore` to exclude `node_modules`, builds, `crm.db`, env and log files
 
-### Next / Ideas (not yet implemented)
-
 - **Data management UIs**
   - Admin screens to manage customers, retailers, and products from the frontend
+
+### Next / Ideas (not yet implemented)
+
 
 - **Better auth UX**
   - Persist JWT in `localStorage` and auto-restore session
