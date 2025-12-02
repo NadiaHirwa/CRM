@@ -148,6 +148,27 @@
   margin: 0;
 }
 
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tab {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #4b5563;
+  background: transparent;
+  color: #e5e7eb;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.tab.active {
+  background: #1f2937;
+  border-color: #38bdf8;
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
