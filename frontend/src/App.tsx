@@ -16,6 +16,15 @@ function App() {
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('password123');
   const [token, setToken] = useState<string | null>(null);
+   const [role, setRole] = useState<string | null>(null);
+   const [userName, setUserName] = useState<string | null>(null);
+   const [retailerOrders, setRetailerOrders] = useState<any[]>([]);
+   const [retailerComplaints, setRetailerComplaints] = useState<any[]>([]);
+   const [products, setProducts] = useState<any[]>([]);
+   const [orderProductId, setOrderProductId] = useState<number | ''>('');
+   const [orderQuantity, setOrderQuantity] = useState<number>(1);
+   const [complaintSubject, setComplaintSubject] = useState('');
+   const [complaintDescription, setComplaintDescription] = useState('');
   const [reportState, setReportState] = useState<ReportState>({
     loading: false,
     error: null,
@@ -42,6 +51,8 @@ function App() {
       }
       const data = await res.json();
       setToken(data.token);
+      setRole(data.role);
+      setUserName(data.name);
     } catch (err: any) {
       setReportState((prev) => ({
         ...prev,
@@ -103,7 +114,7 @@ function App() {
       <div className="App">
         <div className="auth-card">
           <h1>FLR Depot CRM</h1>
-          <p className="subtitle">Admin / Staff Login</p>
+          <p className="subtitle">Login</p>
           {reportState.error && (
             <div className="error-banner">{reportState.error}</div>
           )}
@@ -131,21 +142,32 @@ function App() {
             </button>
           </form>
           <p className="hint">
-            You can use the admin account you created via the API.
+            Use your Admin/Staff or Retailer account credentials.
           </p>
         </div>
       </div>
     );
   }
 
-  return (
+  // Admin / Staff dashboard (reports)
+  if (role === 'ADMIN' || role === 'STAFF') {
+    return (
     <div className="App">
       <header className="top-bar">
         <div className="top-bar-left">
           <span className="app-name">FLR Depot CRM</span>
-          <span className="app-tagline">Admin Dashboard</span>
+          <span className="app-tagline">
+            {role === 'ADMIN' ? 'Admin Dashboard' : 'Staff Dashboard'}
+          </span>
         </div>
-        <button className="secondary-btn" onClick={() => setToken(null)}>
+        <button
+          className="secondary-btn"
+          onClick={() => {
+            setToken(null);
+            setRole(null);
+            setUserName(null);
+          }}
+        >
           Log out
         </button>
       </header>
@@ -271,6 +293,271 @@ function App() {
                         {c.retailer_name || c.customer_name || 'N/A'}
                       </td>
                       <td>{c.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+  }
+
+  // Retailer dashboard
+  const loadRetailerData = async () => {
+    if (!token) return;
+    setReportState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const [ordersRes, complaintsRes, productsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/orders`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE}/api/complaints`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE}/api/products`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (!ordersRes.ok || !complaintsRes.ok || !productsRes.ok) {
+        throw new Error('Failed to load retailer data');
+      }
+      const [orders, complaintsList, productsList] = await Promise.all([
+        ordersRes.json(),
+        complaintsRes.json(),
+        productsRes.json(),
+      ]);
+      setRetailerOrders(orders);
+      setRetailerComplaints(complaintsList);
+      setProducts(productsList);
+      setReportState((prev) => ({ ...prev, loading: false }));
+    } catch (err: any) {
+      setReportState((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'Failed to load retailer data',
+      }));
+    }
+  };
+
+  const submitOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !orderProductId || orderQuantity <= 0) return;
+    setReportState((prev) => ({ ...prev, error: null }));
+    try {
+      const res = await fetch(`${API_BASE}/api/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: [{ product_id: orderProductId, quantity: orderQuantity }],
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to place order');
+      }
+      await loadRetailerData();
+      setOrderQuantity(1);
+      setOrderProductId('');
+    } catch (err: any) {
+      setReportState((prev) => ({
+        ...prev,
+        error: err.message || 'Failed to place order',
+      }));
+    }
+  };
+
+  const submitComplaint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !complaintSubject || !complaintDescription) return;
+    setReportState((prev) => ({ ...prev, error: null }));
+    try {
+      const res = await fetch(`${API_BASE}/api/complaints`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          subject: complaintSubject,
+          description: complaintDescription,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to submit complaint');
+      }
+      setComplaintSubject('');
+      setComplaintDescription('');
+      await loadRetailerData();
+    } catch (err: any) {
+      setReportState((prev) => ({
+        ...prev,
+        error: err.message || 'Failed to submit complaint',
+      }));
+    }
+  };
+
+  return (
+    <div className="App">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <span className="app-name">FLR Depot CRM</span>
+          <span className="app-tagline">
+            Retailer Portal{userName ? ` – ${userName}` : ''}
+          </span>
+        </div>
+        <button
+          className="secondary-btn"
+          onClick={() => {
+            setToken(null);
+            setRole(null);
+            setUserName(null);
+          }}
+        >
+          Log out
+        </button>
+      </header>
+
+      <main className="dashboard">
+        <section className="dashboard-header">
+          <h2>My Orders & Complaints</h2>
+          <button
+            className="primary-btn"
+            onClick={loadRetailerData}
+            disabled={reportState.loading}
+          >
+            {reportState.loading ? 'Loading…' : 'Refresh data'}
+          </button>
+          {reportState.error && (
+            <div className="error-banner">{reportState.error}</div>
+          )}
+        </section>
+
+        <section className="cards-grid">
+          <div className="card">
+            <h3>Place New Order</h3>
+            {products.length === 0 ? (
+              <p className="muted">
+                No products available yet. Contact admin to add products.
+              </p>
+            ) : (
+              <form className="form" onSubmit={submitOrder}>
+                <label>
+                  Product
+                  <select
+                    value={orderProductId}
+                    onChange={(e) =>
+                      setOrderProductId(
+                        e.target.value ? Number(e.target.value) : ''
+                      )
+                    }
+                  >
+                    <option value="">Select a product</option>
+                    {products.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (stock: {p.stock_quantity})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Quantity
+                  <input
+                    type="number"
+                    min={1}
+                    value={orderQuantity}
+                    onChange={(e) => setOrderQuantity(Number(e.target.value))}
+                  />
+                </label>
+                <button type="submit" className="primary-btn">
+                  Submit Order
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>My Orders</h3>
+            {retailerOrders.length === 0 ? (
+              <p className="muted">You have no orders yet.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {retailerOrders.map((o: any) => (
+                    <tr key={o.id}>
+                      <td>{o.id}</td>
+                      <td>{o.status}</td>
+                      <td>{o.total_amount}</td>
+                      <td>{o.created_at}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>Submit Complaint</h3>
+            <form className="form" onSubmit={submitComplaint}>
+              <label>
+                Subject
+                <input
+                  type="text"
+                  value={complaintSubject}
+                  onChange={(e) => setComplaintSubject(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  value={complaintDescription}
+                  onChange={(e) => setComplaintDescription(e.target.value)}
+                  rows={3}
+                  required
+                />
+              </label>
+              <button type="submit" className="primary-btn">
+                Send Complaint
+              </button>
+            </form>
+          </div>
+
+          <div className="card">
+            <h3>My Complaints</h3>
+            {retailerComplaints.length === 0 ? (
+              <p className="muted">You have no complaints yet.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Subject</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {retailerComplaints.map((c: any) => (
+                    <tr key={c.id}>
+                      <td>{c.id}</td>
+                      <td>{c.subject}</td>
+                      <td>{c.status}</td>
+                      <td>{c.created_at}</td>
                     </tr>
                   ))}
                 </tbody>

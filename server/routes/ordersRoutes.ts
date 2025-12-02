@@ -33,23 +33,49 @@ function finalizeOrderTotalsAndStock(
   );
 }
 
-// List orders (ADMIN, STAFF see all; RETAILER sees their own)
+// List orders (ADMIN, STAFF see all; RETAILER sees their own via retailer_id on user)
 router.get("/", requireAuth, (req: AuthRequest, res) => {
   const userRole = req.user!.role;
-  const retailerFilter =
-    userRole === "RETAILER" ? "WHERE o.retailer_id = ?" : "";
   const params: any[] = [];
+  let filterSql = "";
 
   if (userRole === "RETAILER") {
-    // For now, assume retailer_id is passed as query (can be linked later)
-    const retailerId = Number(req.query.retailer_id);
-    if (!retailerId) {
-      res
-        .status(400)
-        .json({ message: "retailer_id query param is required for retailers" });
-      return;
-    }
-    params.push(retailerId);
+    db.get(
+      "SELECT retailer_id FROM users WHERE id = ?",
+      [req.user!.id],
+      (err, row: any) => {
+        if (err) {
+          res.status(500).json({ message: "Failed to resolve retailer" });
+          return;
+        }
+        if (!row || !row.retailer_id) {
+          res
+            .status(400)
+            .json({ message: "No retailer linked to this user account" });
+          return;
+        }
+        filterSql = "WHERE o.retailer_id = ?";
+        params.push(row.retailer_id);
+        db.all(
+          `
+          SELECT o.*, r.name as retailer_name
+          FROM orders o
+          JOIN retailers r ON o.retailer_id = r.id
+          ${filterSql}
+          ORDER BY o.created_at DESC
+        `,
+          params,
+          (err2, rows) => {
+            if (err2) {
+              res.status(500).json({ message: "Failed to fetch orders" });
+              return;
+            }
+            res.json(rows);
+          }
+        );
+      }
+    );
+    return;
   }
 
   db.all(
@@ -57,10 +83,9 @@ router.get("/", requireAuth, (req: AuthRequest, res) => {
     SELECT o.*, r.name as retailer_name
     FROM orders o
     JOIN retailers r ON o.retailer_id = r.id
-    ${retailerFilter}
     ORDER BY o.created_at DESC
   `,
-    params,
+    [],
     (err, rows) => {
       if (err) {
         res.status(500).json({ message: "Failed to fetch orders" });
@@ -74,16 +99,119 @@ router.get("/", requireAuth, (req: AuthRequest, res) => {
 // Create order with items (ADMIN, STAFF, RETAILER)
 router.post("/", requireAuth, (req: AuthRequest, res) => {
   const { retailer_id, items } = req.body as {
-    retailer_id: number;
+    retailer_id?: number;
     items: { product_id: number; quantity: number }[];
   };
 
-  if (!retailer_id || !Array.isArray(items) || items.length === 0) {
+  if (!Array.isArray(items) || items.length === 0) {
     res
       .status(400)
-      .json({ message: "retailer_id and at least one item are required" });
+      .json({ message: "At least one item is required for an order" });
     return;
   }
+
+  const createForRetailer = (resolvedRetailerId: number) => {
+    db.serialize(() => {
+      db.run("BEGIN TRANSACTION");
+      db.run(
+        "INSERT INTO orders (retailer_id, status, total_amount) VALUES (?, 'PENDING', 0)",
+        [resolvedRetailerId],
+        function (err) {
+          if (err) {
+            db.run("ROLLBACK");
+            res.status(500).json({ message: "Failed to create order" });
+            return;
+          }
+          const orderId = this.lastID as number;
+
+          const itemStmt = db.prepare(
+            `
+          INSERT INTO order_items (order_id, product_id, quantity, unit_price, line_total)
+          SELECT ?, p.id, ?, p.unit_price, p.unit_price * ?
+          FROM products p
+          WHERE p.id = ?
+        `
+          );
+
+          for (const item of items) {
+            if (!item.product_id || !item.quantity || item.quantity <= 0) {
+              db.run("ROLLBACK");
+              res.status(400).json({ message: "Invalid item in order" });
+              return;
+            }
+            itemStmt.run(
+              [orderId, item.quantity, item.quantity, item.product_id],
+              (err2) => {
+                if (err2) {
+                  db.run("ROLLBACK");
+                  res
+                    .status(500)
+                    .json({ message: "Failed to add order items" });
+                }
+              }
+            );
+          }
+
+          itemStmt.finalize((finalizeErr) => {
+            if (finalizeErr) {
+              db.run("ROLLBACK");
+              res.status(500).json({ message: "Failed to finalize items" });
+              return;
+            }
+            finalizeOrderTotalsAndStock(orderId, (totErr) => {
+              if (totErr) {
+                db.run("ROLLBACK");
+                res
+                  .status(500)
+                  .json({ message: "Failed to calculate order total" });
+                return;
+              }
+              db.run("COMMIT");
+              db.get(
+                "SELECT * FROM orders WHERE id = ?",
+                [orderId],
+                (err3, row) => {
+                  if (err3 || !row) {
+                    res.status(201).json({ id: orderId, retailer_id: resolvedRetailerId });
+                    return;
+                  }
+                  res.status(201).json(row);
+                }
+              );
+            });
+          });
+        }
+      );
+    });
+  };
+
+  if (req.user!.role === "RETAILER") {
+    db.get(
+      "SELECT retailer_id FROM users WHERE id = ?",
+      [req.user!.id],
+      (err, row: any) => {
+        if (err) {
+          res.status(500).json({ message: "Failed to resolve retailer" });
+          return;
+        }
+        if (!row || !row.retailer_id) {
+          res
+            .status(400)
+            .json({ message: "No retailer linked to this user account" });
+          return;
+        }
+        createForRetailer(row.retailer_id);
+      }
+    );
+    return;
+  }
+
+  if (!retailer_id) {
+    res.status(400).json({ message: "retailer_id is required" });
+    return;
+  }
+
+  createForRetailer(retailer_id);
 
   db.serialize(() => {
     db.run("BEGIN TRANSACTION");

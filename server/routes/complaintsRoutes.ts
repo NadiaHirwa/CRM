@@ -4,7 +4,7 @@ import { requireAuth, requireRole, AuthRequest } from "../auth";
 
 const router = Router();
 
-// List complaints (ADMIN, STAFF see all; RETAILER sees own)
+// List complaints (ADMIN, STAFF see all; RETAILER sees own using retailer_id on user)
 router.get("/", requireAuth, (req: AuthRequest, res) => {
   const role = req.user!.role;
   let sql = `
@@ -16,15 +16,31 @@ router.get("/", requireAuth, (req: AuthRequest, res) => {
   const params: any[] = [];
 
   if (role === "RETAILER") {
-    sql += " WHERE c.retailer_id = ?";
-    const retailerId = Number(req.query.retailer_id);
-    if (!retailerId) {
-      res
-        .status(400)
-        .json({ message: "retailer_id query param is required for retailers" });
-      return;
-    }
-    params.push(retailerId);
+    db.get(
+      "SELECT retailer_id FROM users WHERE id = ?",
+      [req.user!.id],
+      (err, row: any) => {
+        if (err) {
+          res.status(500).json({ message: "Failed to resolve retailer" });
+          return;
+        }
+        if (!row || !row.retailer_id) {
+          res
+            .status(400)
+            .json({ message: "No retailer linked to this user account" });
+          return;
+        }
+        const localSql = sql + " WHERE c.retailer_id = ? ORDER BY c.created_at DESC";
+        db.all(localSql, [row.retailer_id], (err2, rows) => {
+          if (err2) {
+            res.status(500).json({ message: "Failed to fetch complaints" });
+            return;
+          }
+          res.json(rows);
+        });
+      }
+    );
+    return;
   }
 
   sql += " ORDER BY c.created_at DESC";
@@ -56,39 +72,64 @@ router.post("/", requireAuth, (req: AuthRequest, res) => {
 
   const submittedBy = req.user!.id;
 
-  const stmt = db.prepare(
+  const insertComplaint = (resolvedRetailerId: number | null) => {
+    const stmt = db.prepare(
+      `
+      INSERT INTO complaints
+        (retailer_id, customer_id, submitted_by_user_id, subject, description, status)
+      VALUES (?, ?, ?, ?, ?, 'OPEN')
     `
-    INSERT INTO complaints
-      (retailer_id, customer_id, submitted_by_user_id, subject, description, status)
-    VALUES (?, ?, ?, ?, ?, 'OPEN')
-  `
-  );
-  stmt.run(
-    [retailer_id ?? null, customer_id ?? null, submittedBy, subject, description],
-    function (err) {
-      if (err) {
-        res.status(500).json({ message: "Failed to create complaint" });
-        return;
-      }
-      db.get(
-        "SELECT * FROM complaints WHERE id = ?",
-        [this.lastID],
-        (err2, row) => {
-          if (err2 || !row) {
-            res.status(201).json({
-              id: this.lastID,
-              retailer_id,
-              customer_id,
-              subject,
-              description,
-            });
-            return;
-          }
-          res.status(201).json(row);
+    );
+    stmt.run(
+      [resolvedRetailerId, customer_id ?? null, submittedBy, subject, description],
+      function (err) {
+        if (err) {
+          res.status(500).json({ message: "Failed to create complaint" });
+          return;
         }
-      );
-    }
-  );
+        db.get(
+          "SELECT * FROM complaints WHERE id = ?",
+          [this.lastID],
+          (err2, row) => {
+            if (err2 || !row) {
+              res.status(201).json({
+                id: this.lastID,
+                retailer_id: resolvedRetailerId,
+                customer_id,
+                subject,
+                description,
+              });
+              return;
+            }
+            res.status(201).json(row);
+          }
+        );
+      }
+    );
+  };
+
+  if (req.user!.role === "RETAILER" && !retailer_id) {
+    db.get(
+      "SELECT retailer_id FROM users WHERE id = ?",
+      [req.user!.id],
+      (err, row: any) => {
+        if (err) {
+          res.status(500).json({ message: "Failed to resolve retailer" });
+          return;
+        }
+        if (!row || !row.retailer_id) {
+          res
+            .status(400)
+            .json({ message: "No retailer linked to this user account" });
+          return;
+        }
+        insertComplaint(row.retailer_id);
+      }
+    );
+    return;
+  }
+
+  insertComplaint(retailer_id ?? null);
 });
 
 // Update complaint status / assignment (ADMIN, STAFF)

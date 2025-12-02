@@ -16,9 +16,22 @@ export function initDb(): void {
           email TEXT NOT NULL UNIQUE,
           password_hash TEXT NOT NULL,
           role TEXT NOT NULL CHECK (role IN ('ADMIN', 'STAFF', 'RETAILER')),
+          retailer_id INTEGER,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+    // For existing databases that may not have retailer_id yet
+    db.run(
+      "ALTER TABLE users ADD COLUMN retailer_id INTEGER",
+      (err: Error | null) => {
+        if (err && !String(err.message).includes("duplicate column name")) {
+          // Ignore if column already exists; log other errors to console
+          // eslint-disable-next-line no-console
+          console.error("Error ensuring retailer_id on users:", err.message);
+        }
+      }
+    );
 
     db.run(`
         CREATE TABLE IF NOT EXISTS customers (
