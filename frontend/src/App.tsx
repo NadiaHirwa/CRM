@@ -34,6 +34,64 @@ function App() {
     complaints: [],
   });
 
+  const updateOrderStatus = async (orderId: number, status: string) => {
+    if (!token) return;
+    setReportState((prev) => ({ ...prev, error: null }));
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to update order status');
+      }
+      await loadReports();
+    } catch (err: any) {
+      setReportState((prev) => ({
+        ...prev,
+        error: err.message || 'Failed to update order status',
+      }));
+    }
+  };
+
+  const updateComplaint = async (
+    complaintId: number,
+    status: string,
+    assignedToUserId?: number | null
+  ) => {
+    if (!token) return;
+    setReportState((prev) => ({ ...prev, error: null }));
+    try {
+      const res = await fetch(`${API_BASE}/api/complaints/${complaintId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status,
+          assigned_to_user_id:
+            assignedToUserId === undefined ? null : assignedToUserId,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to update complaint');
+      }
+      await loadReports();
+    } catch (err: any) {
+      setReportState((prev) => ({
+        ...prev,
+        error: err.message || 'Failed to update complaint',
+      }));
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setReportState((prev) => ({ ...prev, error: null }));
@@ -254,6 +312,7 @@ function App() {
                     <th>Retailer</th>
                     <th>Status</th>
                     <th>Total</th>
+                    <th>Change Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,6 +322,20 @@ function App() {
                       <td>{o.retailer_name}</td>
                       <td>{o.status}</td>
                       <td>{o.total_amount}</td>
+                      <td>
+                        <select
+                          defaultValue={o.status}
+                          onChange={(e) =>
+                            updateOrderStatus(o.id, e.target.value)
+                          }
+                        >
+                          <option value="PENDING">PENDING</option>
+                          <option value="APPROVED">APPROVED</option>
+                          <option value="SHIPPED">SHIPPED</option>
+                          <option value="DELIVERED">DELIVERED</option>
+                          <option value="CANCELLED">CANCELLED</option>
+                        </select>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -282,19 +355,61 @@ function App() {
                     <th>Subject</th>
                     <th>Retailer / Customer</th>
                     <th>Status</th>
+                    <th>Assign to User ID</th>
+                    <th>Update</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reportState.complaints.map((c: any) => (
-                    <tr key={c.id}>
-                      <td>{c.id}</td>
-                      <td>{c.subject}</td>
-                      <td>
-                        {c.retailer_name || c.customer_name || 'N/A'}
-                      </td>
-                      <td>{c.status}</td>
-                    </tr>
-                  ))}
+                  {reportState.complaints.map((c: any) => {
+                    let assignedInput: HTMLInputElement | null = null;
+                    let statusSelect: HTMLSelectElement | null = null;
+                    return (
+                      <tr key={c.id}>
+                        <td>{c.id}</td>
+                        <td>{c.subject}</td>
+                        <td>{c.retailer_name || c.customer_name || 'N/A'}</td>
+                        <td>
+                          <select
+                            defaultValue={c.status}
+                            ref={(el) => {
+                              statusSelect = el;
+                            }}
+                          >
+                            <option value="OPEN">OPEN</option>
+                            <option value="IN_PROGRESS">IN_PROGRESS</option>
+                            <option value="RESOLVED">RESOLVED</option>
+                            <option value="CLOSED">CLOSED</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            placeholder="User ID"
+                            defaultValue={c.assigned_to_user_id ?? ''}
+                            ref={(el) => {
+                              assignedInput = el;
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            className="secondary-btn"
+                            onClick={() =>
+                              updateComplaint(
+                                c.id,
+                                statusSelect?.value || c.status,
+                                assignedInput?.value
+                                  ? Number(assignedInput.value)
+                                  : null
+                              )
+                            }
+                          >
+                            Save
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
