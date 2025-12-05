@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
+import { saveAuthData, loadAuthData, clearAuthData, getTokenTimeRemaining } from './utils/auth';
 
-const API_BASE = 'http://localhost:4000';
+// Use environment variable or default to localhost for development
+// In Docker/production, nginx will proxy /api requests, so relative URLs work
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:4000';
 
 type ReportState = {
   loading: boolean;
@@ -38,6 +41,8 @@ function App() {
   const [adminRetailers, setAdminRetailers] = useState<any[]>([]);
   const [adminCustomers, setAdminCustomers] = useState<any[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<{ lowStock: any; longPendingComplaints: any } | null>(null);
+  const [notificationsVisible, setNotificationsVisible] = useState<boolean>(true);
   const [newProduct, setNewProduct] = useState({ name: '', sku: '', unit_price: 0, stock_quantity: 0 });
   const [newRetailer, setNewRetailer] = useState({ name: '', contact_name: '', phone: '', email: '', address: '' });
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
@@ -45,6 +50,73 @@ function App() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [editingRetailerId, setEditingRetailerId] = useState<number | null>(null);
   const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
+  const [tokenExpiryWarning, setTokenExpiryWarning] = useState<string | null>(null);
+
+  // Helper function to handle logout and clear storage
+  const handleLogout = () => {
+    setToken(null);
+    setRole(null);
+    setUserName(null);
+    setTokenExpiryWarning(null);
+    clearAuthData();
+  };
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const savedAuth = loadAuthData();
+    if (savedAuth) {
+      setToken(savedAuth.token);
+      setRole(savedAuth.role);
+      setUserName(savedAuth.userName);
+    }
+  }, []);
+
+  // Check token expiry periodically and show warning
+  useEffect(() => {
+    if (!token) return;
+
+    const checkExpiry = () => {
+      const remaining = getTokenTimeRemaining();
+      if (remaining === null) {
+        handleLogout();
+        return;
+      }
+      
+      if (remaining <= 5) {
+        setTokenExpiryWarning(`Your session will expire in ${remaining} minute(s). Please save your work and log in again.`);
+      } else if (remaining <= 30) {
+        setTokenExpiryWarning(`Your session will expire in ${remaining} minutes.`);
+      } else {
+        setTokenExpiryWarning(null);
+      }
+    };
+
+    checkExpiry();
+    const interval = setInterval(checkExpiry, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [token]);
+
+  // Helper function to make authenticated API calls with token expiry handling
+  const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
+    if (!token) throw new Error('Not authenticated');
+    
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    // If token is expired, logout user
+    if (response.status === 401) {
+      handleLogout();
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    return response;
+  };
 
   const updateOrderStatus = async (orderId: number, status: string) => {
     if (!token) return;
@@ -123,6 +195,8 @@ function App() {
       setToken(data.token);
       setRole(data.role);
       setUserName(data.name);
+      // Save to localStorage for persistence
+      saveAuthData(data.token, data.role, data.name);
     } catch (err: any) {
       setReportState((prev) => ({
         ...prev,
@@ -196,6 +270,31 @@ function App() {
       // ignore for now, errors surfaced via other calls
     }
   };
+
+  const loadNotifications = async () => {
+    if (!token || (role !== 'ADMIN' && role !== 'STAFF')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+      }
+    } catch (err) {
+      // Silently fail - notifications are not critical
+      console.error('Failed to load notifications:', err);
+    }
+  };
+
+  // Load notifications on mount and periodically for admin/staff
+  useEffect(() => {
+    if (token && (role === 'ADMIN' || role === 'STAFF')) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 5 * 60 * 1000); // Check every 5 minutes
+      return () => clearInterval(interval);
+    }
+  }, [token, role]);
 
   const createOrUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -365,17 +464,81 @@ function App() {
             {role === 'ADMIN' ? 'Admin Dashboard' : 'Staff Dashboard'}
           </span>
         </div>
-        <button
-          className="secondary-btn"
-          onClick={() => {
-            setToken(null);
-            setRole(null);
-            setUserName(null);
-          }}
-        >
-          Log out
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {notifications && (notifications.lowStock.count > 0 || notifications.longPendingComplaints.count > 0) && (
+            <button
+              className="notification-icon-btn"
+              onClick={() => setNotificationsVisible(!notificationsVisible)}
+              title="Toggle notifications"
+            >
+              🔔
+              {(notifications.lowStock.count + notifications.longPendingComplaints.count) > 0 && (
+                <span className="notification-badge">
+                  {notifications.lowStock.count + notifications.longPendingComplaints.count}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            className="secondary-btn"
+            onClick={handleLogout}
+          >
+            Log out
+          </button>
+        </div>
       </header>
+
+      {tokenExpiryWarning && (
+        <div className="warning-banner">
+          {tokenExpiryWarning}
+        </div>
+      )}
+
+      {notifications && notificationsVisible && (notifications.lowStock.count > 0 || notifications.longPendingComplaints.count > 0) && (
+        <div className="notifications-banner">
+          <h3>🔔 Notifications</h3>
+          {notifications.lowStock.count > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <strong>
+                ⚠️ Low Stock Alert:
+              </strong>{' '}
+              {notifications.lowStock.count} product{notifications.lowStock.count !== 1 ? 's' : ''} below threshold ({notifications.lowStock.threshold} units)
+              <ul>
+                {notifications.lowStock.products.slice(0, 5).map((p: any) => (
+                  <li key={p.id}>
+                    {p.name} {p.sku && `(${p.sku})`} - {p.stockQuantity} units remaining
+                    {p.stockQuantity === 0 && <span className="critical"> (OUT OF STOCK)</span>}
+                  </li>
+                ))}
+                {notifications.lowStock.count > 5 && <li>...and {notifications.lowStock.count - 5} more</li>}
+              </ul>
+            </div>
+          )}
+          {notifications.longPendingComplaints.count > 0 && (
+            <div>
+              <strong>
+                ⏰ Long-Pending Complaints:
+              </strong>{' '}
+              {notifications.longPendingComplaints.count} complaint{notifications.longPendingComplaints.count !== 1 ? 's' : ''} open for more than {notifications.longPendingComplaints.warningHours} hours
+              <ul>
+                {notifications.longPendingComplaints.complaints.slice(0, 5).map((c: any) => (
+                  <li key={c.id}>
+                    Complaint #{c.id}: {c.subject} - {c.hoursOpen.toFixed(1)} hours ({c.status})
+                  </li>
+                ))}
+                {notifications.longPendingComplaints.count > 5 && <li>...and {notifications.longPendingComplaints.count - 5} more</li>}
+              </ul>
+            </div>
+          )}
+          <button
+            className="secondary-btn"
+            onClick={() => setNotificationsVisible(false)}
+            style={{ marginTop: '12px', fontSize: '0.9em' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <main className="dashboard">
         <section className="dashboard-header">
@@ -1189,15 +1352,17 @@ function App() {
         </div>
         <button
           className="secondary-btn"
-          onClick={() => {
-            setToken(null);
-            setRole(null);
-            setUserName(null);
-          }}
+          onClick={handleLogout}
         >
           Log out
         </button>
       </header>
+
+      {tokenExpiryWarning && (
+        <div className="warning-banner">
+          {tokenExpiryWarning}
+        </div>
+      )}
 
       <main className="dashboard">
         <section className="dashboard-header">

@@ -12,6 +12,7 @@ import ordersRoutes from "./routes/ordersRoutes";
 import complaintsRoutes from "./routes/complaintsRoutes";
 import reportsRoutes from "./routes/reportsRoutes";
 import transactionsRoutes from "./routes/transactionsRoutes";
+import notificationsRoutes from "./routes/notificationsRoutes";
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use("/api/orders", ordersRoutes);
 app.use("/api/complaints", complaintsRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/transactions", transactionsRoutes);
+app.use("/api/notifications", notificationsRoutes);
 
 app.listen(PORT, () => {
   console.log(`CRM backend running on http://localhost:${PORT}`);

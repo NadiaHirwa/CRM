@@ -38,22 +38,26 @@
 - **Data management UIs**
   - Admin screens to manage customers, retailers, and products from the frontend
 
-### Next / Ideas (not yet implemented)
-
-
 - **Better auth UX**
-  - Persist JWT in `localStorage` and auto-restore session
-  - Handle token expiry gracefully (auto logout / refresh prompt)
+  - Persist JWT in `localStorage` and auto-restore session on page load
+  - Handle token expiry gracefully with warnings and auto-logout on expiration
+  - Session restoration on page refresh
 
 - **Notifications & automation**
-  - Background checks for low stock and long-pending complaints
-  - Email/SMS or in-app notification hooks (for future integration)
+  - API endpoint `/api/notifications` for low stock and long-pending complaints
+  - Background notification service with hooks infrastructure for email/SMS integration
+  - Frontend notifications banner in admin dashboard
+  - Configurable thresholds via query params or environment variables
+
+- **Deployment & demo**
+  - Dockerfile for backend (Node.js + Express)
+  - Dockerfile for frontend (React + Nginx)
+  - `docker-compose.yml` to orchestrate backend + frontend services
+  - Seed script (`npm run seed`) to populate database with demo data for presentations
+
+### Next / Ideas (not yet implemented)
 
 - **Ishyiga integration**
   - Sync stock updates via Ishyiga API (push/pull stock changes)
-
-- **Deployment & demo**
-  - Dockerize backend + frontend
-  - Seed script to create demo data for presentations
 
 
